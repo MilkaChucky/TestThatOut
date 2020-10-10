@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'hu.milkachucky'
-version '0.1.0'
+version '1.0.0'
 
 sourceCompatibility = JavaVersion.VERSION_1_10
 targetCompatibility = JavaVersion.VERSION_1_10
