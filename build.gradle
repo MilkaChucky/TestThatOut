@@ -6,8 +6,8 @@ plugins {
 group 'hu.milkachucky'
 version '0.1.0'
 
-sourceCompatibility = '11'
-targetCompatibility = '11'
+sourceCompatibility = JavaVersion.VERSION_1_10
+targetCompatibility = JavaVersion.VERSION_1_10
 
 repositories {
     mavenCentral()
