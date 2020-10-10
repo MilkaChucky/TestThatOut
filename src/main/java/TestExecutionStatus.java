@@ -2,7 +2,7 @@ public enum TestExecutionStatus {
     FAILED(String.format("%s[]%s", AnsiColor.RED_BOLD_BRIGHT, AnsiColor.RESET), "✘"),
     SUCCEEDED(String.format("%s[]%s", AnsiColor.GREEN_BOLD_BRIGHT, AnsiColor.RESET), "✔"),
     SKIPPED(String.format("%s[]%s", AnsiColor.YELLOW_BOLD_BRIGHT, AnsiColor.RESET), "►"),
-    ABORTED(String.format("%s[]%s", AnsiColor.RED_BOLD, AnsiColor.RESET), "■");
+    ABORTED(String.format("%s[]%s", AnsiColor.MAGENTA_BOLD_BRIGHT, AnsiColor.RESET), "■");
 
     private final String template;
     private final String symbol;

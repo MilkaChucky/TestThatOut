@@ -1,4 +1,5 @@
 import annotations.*;
+import org.apache.commons.collections4.map.ListOrderedMap;
 import org.jetbrains.annotations.NotNull;
 import org.reflections8.Reflections;
 
@@ -8,8 +9,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class TestRunner {
+    private static final Reflections reflections = new Reflections();
+
     public static void main(String[] args) {
-        Reflections reflections = new Reflections();
         Stream<Class<?>> classes = reflections.getTypesAnnotatedWith(TestCase.class).stream();
 
         if (args != null && args.length > 0) {
@@ -17,15 +19,7 @@ public class TestRunner {
         }
 
         var testResults = classes.parallel()
-                .collect(Collectors.toMap(Class::getSimpleName, testCase -> {
-                    try {
-                        return RunTestCase(testCase);
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        System.exit(ex.hashCode());
-                    }
-                    return null;
-                }));
+                .collect(Collectors.toMap(Class::getSimpleName, TestRunner::RunTestCase));
 
         for (var testCase : testResults.entrySet()) {
             System.out.printf("%s%s%s%s%n", AnsiColor.WHITE_UNDERLINED, AnsiColor.WHITE_BOLD_BRIGHT, testCase.getKey(), AnsiColor.RESET);
@@ -44,21 +38,18 @@ public class TestRunner {
     }
 
     private static Map<String, TestResult> RunTestCase(@NotNull Class<?> testCase) {
-        var results = new LinkedHashMap<String, TestResult>();
+        var results = new ListOrderedMap<String, TestResult>();
 
-        var beforeClassTests = new LinkedList<Method>();
-        var beforeTests = new LinkedList<Method>();
-        var tests = new LinkedList<Method>();
-        var afterTests = new LinkedList<Method>();
-        var afterClassTests = new LinkedList<Method>();
-
-//        results.put(String.format("%s init", testCase.getSimpleName()), null);
+        List<Method> // One for each annotation
+                beforeClassTests = new LinkedList<>(),
+                beforeTests = new LinkedList<>(),
+                tests = new LinkedList<>(),
+                afterTests = new LinkedList<>(),
+                afterClassTests = new LinkedList<>();
 
         for (var method : testCase.getDeclaredMethods()) {
-            if (method.getAnnotation(BeforeClass.class) != null) {
+            if (method.getAnnotation(BeforeClass.class) != null)
                 beforeClassTests.add(method);
-//                results.put(String.format("BeforeClass: %s", method.getName()), null);
-            }
 
             if (method.getAnnotation(Before.class) != null)
                 beforeTests.add(method);
@@ -73,56 +64,68 @@ public class TestRunner {
             if (method.getAnnotation(After.class) != null)
                 afterTests.add(method);
 
-            if (method.getAnnotation(AfterClass.class) != null) {
+            if (method.getAnnotation(AfterClass.class) != null)
                 afterClassTests.add(method);
-//                results.put(String.format("AfterClass: %s", method.getName()), null);
-            }
         }
 
         Object testCaseInstance;
         try {
             testCaseInstance = testCase.getConstructor().newInstance();
         } catch (Exception ex) {
-//            results.put(String.format("%s init", testCase.getSimpleName()), new TestResult(TestExecutionStatus.FAILED, ex));
+            var name= String.format("%s init", testCase.getSimpleName());
+            results.put(0, name, new TestResult(TestExecutionStatus.FAILED, ex));
 
             return results;
         }
 
         for (var beforeClassTest : beforeClassTests) {
-//            var name = String.format("BeforeClass: %s", beforeClassTest.getName());
             try {
                 beforeClassTest.invoke(testCaseInstance);
-//                results.remove(name);
             } catch (Exception ex) {
-//                results.put(name, new TestResult(TestExecutionStatus.FAILED, ex));
-//                return results;
+                results.put(0, beforeClassTest.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
+
+                return results;
             }
         }
 
         for (var test : tests) {
-            try {
-                for (var beforeTest : beforeTests) {
+            for (var beforeTest : beforeTests) {
+                try {
                     beforeTest.invoke(testCaseInstance);
-                }
+                } catch (Exception ex) {
+                    var name = String.format("Before %s: %s", test.getName(), beforeTest.getName());
+                    var i = results.indexOf(test.getName());
+                    results.put(i, name, new TestResult(TestExecutionStatus.FAILED, ex));
 
+                    return results;
+                }
+            }
+
+            try {
                 test.invoke(testCaseInstance);
                 results.put(test.getName(), new TestResult(TestExecutionStatus.SUCCEEDED));
-
-                for (var afterTest : afterTests) {
-                    afterTest.invoke(testCaseInstance);
-                }
             } catch (Exception ex) {
                 results.put(test.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
+            }
+
+            for (var afterTest : afterTests) {
+                try {
+                    afterTest.invoke(testCaseInstance);
+                } catch (Exception ex) {
+                    var name = String.format("After %s: %s", test.getName(), afterTest.getName());
+                    var i = results.indexOf(test.getName()) + 1;
+                    results.put(i, name, new TestResult(TestExecutionStatus.FAILED, ex));
+
+                    return results;
+                }
             }
         }
 
         for (var afterClassTest : afterClassTests) {
-//            var name = String.format("AfterClass: %s", afterClassTest.getName());
             try {
                 afterClassTest.invoke(testCaseInstance);
-//                results.remove(name);
             } catch (Exception ex) {
-//                results.put(name, new TestResult(TestExecutionStatus.FAILED, ex));
+                results.put(afterClassTest.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
             }
         }
 
