@@ -12,32 +12,51 @@ public class TestRunner {
     private static final Reflections reflections = new Reflections();
 
     public static void main(String[] args) {
-        Stream<Class<?>> classes = reflections.getTypesAnnotatedWith(TestCase.class).stream();
+        TestExecutionStatus.useSymbols = true;
 
-        if (args != null && args.length > 0) {
-            classes = classes.filter(c -> Arrays.stream(args).anyMatch(name -> name.equals(c.getSimpleName())));
-        }
+        var testCaseResults = runAnnotatedTestCases(args);
 
-        var testResults = classes.parallel()
-                .collect(Collectors.toMap(Class::getSimpleName, TestRunner::RunTestCase));
+//        var testResults = runTestCases(
+//                TestCase1.class,
+//                TestCase3.class
+//        );
 
-        for (var testCase : testResults.entrySet()) {
-            System.out.printf("%s%s%s%s%n", AnsiColor.WHITE_UNDERLINED, AnsiColor.WHITE_BOLD_BRIGHT, testCase.getKey(), AnsiColor.RESET);
-
-            for (var test : testCase.getValue().entrySet()) {
-                System.out.printf("\t%s %s%n", test.getValue().getTestExecutionStatus().useSymbol(true), test.getKey());
-
-                var error = test.getValue().getError();
-                if (error != null) {
-                    System.out.printf("\t\t--> %s%n", error.getCause().getMessage());
-                }
-            }
-
+        for (var testCaseResult : testCaseResults) {
+            String test = testCaseResult.toString();
+            System.out.println(testCaseResult.toFormattedString());
             System.out.println();
         }
+
+//        var failedTests = testCaseResults.stream()
+//                .flatMap(testCaseResult -> testCaseResult.getTestResults(TestExecutionStatus.FAILED).stream())
+//                .collect(Collectors.toList());
+//
+//        for (var testResult : failedTests) {
+//            System.out.println(testResult);
+//        }
     }
 
-    private static Map<String, TestResult> RunTestCase(@NotNull Class<?> testCase) {
+    public static List<TestCaseResult> runAnnotatedTestCases(String... testCaseNames) {
+        Stream<Class<?>> testCases = reflections.getTypesAnnotatedWith(TestCase.class).stream();
+
+        if (testCaseNames != null && testCaseNames.length > 0) {
+            testCases = testCases.filter(c -> Arrays.stream(testCaseNames).anyMatch(name -> name.equals(c.getSimpleName())));
+        }
+
+        return runTestCases(testCases);
+    }
+
+    public static List<TestCaseResult> runTestCases(@NotNull Class<?>... testCases) {
+        return runTestCases(Arrays.stream(testCases));
+    }
+
+    public static List<TestCaseResult> runTestCases(@NotNull Stream<Class<?>> testCases) {
+        return testCases.parallel()
+                .map(TestRunner::runTestCase)
+                .collect(Collectors.toList());
+    }
+
+    private static TestCaseResult runTestCase(@NotNull Class<?> testCase) {
         var results = new ListOrderedMap<String, TestResult>();
 
         List<Method> // One for each annotation
@@ -56,9 +75,9 @@ public class TestRunner {
 
             if (method.getAnnotation(Test.class) != null && method.getAnnotation(Skip.class) == null) {
                 tests.add(method);
-                results.put(method.getName(), new TestResult(TestExecutionStatus.ABORTED));
+                results.put(method.getName(), new TestResult(method.getName(), TestExecutionStatus.ABORTED));
             } else if (method.getAnnotation(Skip.class) != null) {
-                results.put(method.getName(), new TestResult(TestExecutionStatus.SKIPPED));
+                results.put(method.getName(), new TestResult(method.getName(), TestExecutionStatus.SKIPPED));
             }
 
             if (method.getAnnotation(After.class) != null)
@@ -73,18 +92,18 @@ public class TestRunner {
             testCaseInstance = testCase.getConstructor().newInstance();
         } catch (Exception ex) {
             var name= String.format("%s init", testCase.getSimpleName());
-            results.put(0, name, new TestResult(TestExecutionStatus.FAILED, ex));
+            results.put(0, name, new TestResult(name, TestExecutionStatus.FAILED, ex));
 
-            return results;
+            return new TestCaseResult(testCase.getSimpleName(), results);
         }
 
         for (var beforeClassTest : beforeClassTests) {
             try {
                 beforeClassTest.invoke(testCaseInstance);
             } catch (Exception ex) {
-                results.put(0, beforeClassTest.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
+                results.put(0, beforeClassTest.getName(), new TestResult(beforeClassTest.getName(), TestExecutionStatus.FAILED, ex));
 
-                return results;
+                return new TestCaseResult(testCase.getSimpleName(), results);
             }
         }
 
@@ -95,17 +114,17 @@ public class TestRunner {
                 } catch (Exception ex) {
                     var name = String.format("Before %s: %s", test.getName(), beforeTest.getName());
                     var i = results.indexOf(test.getName());
-                    results.put(i, name, new TestResult(TestExecutionStatus.FAILED, ex));
+                    results.put(i, name, new TestResult(name, TestExecutionStatus.FAILED, ex));
 
-                    return results;
+                    return new TestCaseResult(testCase.getSimpleName(), results);
                 }
             }
 
             try {
                 test.invoke(testCaseInstance);
-                results.put(test.getName(), new TestResult(TestExecutionStatus.SUCCEEDED));
+                results.put(test.getName(), new TestResult(test.getName(), TestExecutionStatus.SUCCEEDED));
             } catch (Exception ex) {
-                results.put(test.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
+                results.put(test.getName(), new TestResult(test.getName(), TestExecutionStatus.FAILED, ex));
             }
 
             for (var afterTest : afterTests) {
@@ -114,9 +133,9 @@ public class TestRunner {
                 } catch (Exception ex) {
                     var name = String.format("After %s: %s", test.getName(), afterTest.getName());
                     var i = results.indexOf(test.getName()) + 1;
-                    results.put(i, name, new TestResult(TestExecutionStatus.FAILED, ex));
+                    results.put(i, name, new TestResult(name, TestExecutionStatus.FAILED, ex));
 
-                    return results;
+                    return new TestCaseResult(testCase.getSimpleName(), results);
                 }
             }
         }
@@ -125,10 +144,10 @@ public class TestRunner {
             try {
                 afterClassTest.invoke(testCaseInstance);
             } catch (Exception ex) {
-                results.put(afterClassTest.getName(), new TestResult(TestExecutionStatus.FAILED, ex));
+                results.put(afterClassTest.getName(), new TestResult(afterClassTest.getName(), TestExecutionStatus.FAILED, ex));
             }
         }
 
-        return results;
+        return new TestCaseResult(testCase.getSimpleName(), results);
     }
 }

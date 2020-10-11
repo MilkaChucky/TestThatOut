@@ -3,7 +3,7 @@ package testcases;
 import annotations.*;
 
 @TestCase
-public class TestClass3 {
+public class TestCase3 {
     private int i;
 
     @BeforeClass
